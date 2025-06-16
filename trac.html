@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Step Tracker with Leaflet</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <style>
+    html, body, #map { height: 100%; margin: 0; padding: 0; }
+    #controls {
+      position: absolute;
+      top: 10px; left: 10px;
+      z-index: 1000;
+      background: white;
+      padding: 10px;
+      border-radius: 8px;
+    }
+  </style>
+</head>
+<body>
+
+<div id="controls">
+  <input type="text" id="searchBox" placeholder="Cari lokasi..." />
+  <button onclick="startTracking()">Mulai</button>
+  <button onclick="stopTracking()">Selesai</button>
+  <p id="info">Jarak: 0 m | Waktu: 0 s</p>
+</div>
+<div id="map"></div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/leaflet-control-geocoder/dist/Control.Geocoder.js"></script>
+<link rel="stylesheet" href="https://unpkg.com/leaflet-control-geocoder/dist/Control.Geocoder.css" />
+
+<script>
+  let map = L.map('map').fitWorld();
+  let userMarker = null;
+  let route = [];
+  let polyline = null;
+  let tracking = false;
+  let startTime = null;
+  let distance = 0;
+  let watchId = null;
+
+  // Inisialisasi peta dan lokasi awal
+  map.locate({ setView: true, maxZoom: 18 });
+
+  function updateUserPosition(e) {
+    const latlng = e.latlng || e.coords ? L.latLng(e.coords.latitude, e.coords.longitude) : null;
+    if (!latlng) return;
+
+    if (!userMarker) {
+      userMarker = L.marker(latlng).addTo(map).bindPopup("Lokasi Anda").openPopup();
+    } else {
+      userMarker.setLatLng(latlng);
+    }
+
+    if (tracking) {
+      if (route.length > 0) {
+        distance += latlng.distanceTo(route[route.length - 1]);
+      }
+      route.push(latlng);
+      if (polyline) polyline.remove();
+      polyline = L.polyline(route, { color: 'blue' }).addTo(map);
+
+      let timeElapsed = Math.floor((Date.now() - startTime) / 1000);
+      document.getElementById('info').innerText =
+        `Jarak: ${distance.toFixed(2)} m | Waktu: ${timeElapsed} s`;
+    }
+  }
+
+  map.on('locationfound', updateUserPosition);
+
+  map.on('click', function(e) {
+    const popup = L.popup()
+      .setLatLng(e.latlng)
+      .setContent("Lokasi diklik: " + e.latlng.toString())
+      .openOn(map);
+  });
+
+  L.Control.geocoder().addTo(map);
+
+  function startTracking() {
+    tracking = true;
+    startTime = Date.now();
+    route = [];
+    distance = 0;
+    if (navigator.geolocation) {
+      watchId = navigator.geolocation.watchPosition(updateUserPosition, null, {
+        enableHighAccuracy: true
+      });
+    }
+  }
+
+  function stopTracking() {
+    tracking = false;
+    if (watchId) {
+      navigator.geolocation.clearWatch(watchId);
+      watchId = null;
+    }
+
+    const totalTime = Math.floor((Date.now() - startTime) / 1000);
+    const data = {
+      waktu: totalTime,
+      jarak: distance.toFixed(2)
+    };
+
+    document.getElementById('info').innerText =
+      `Total: ${data.jarak} m | ${data.waktu} s`;
+
+    // Simpan ke Google Sheets
+    fetch('https://script.google.com/macros/s/YOUR_SCRIPT_ID/exec', {
+      method: 'POST',
+      body: JSON.stringify(data),
+      headers: { 'Content-Type': 'application/json' }
+    })
+    .then(res => res.text())
+    .then(res => alert("Data berhasil disimpan!"))
+    .catch(err => alert("Gagal menyimpan data: " + err));
+  }
+
+</script>
+</body>
+</html>
